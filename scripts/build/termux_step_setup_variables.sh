@@ -68,7 +68,7 @@ termux_step_setup_variables() {
 	if [ "$TERMUX_ON_DEVICE_BUILD" = "true" ]; then
 		# For on-device builds cross-compiling is not supported so we can
 		# store information about built packages under $TERMUX_TOPDIR.
-		TERMUX_BUILT_PACKAGES_DIRECTORY="$TERMUX_TOPDIR/.built-packages"
+		export TERMUX_BUILT_PACKAGES_DIRECTORY="${TERMUX_BUILT_PACKAGES_DIRECTORY:-$TERMUX_TOPDIR/.built-packages}"
 		TERMUX_PKGS__BUILD__RM_ALL_PKGS_BUILT_MARKER_AND_INSTALL_FILES="false"
 
 		if [ "$TERMUX_PACKAGE_LIBRARY" = "bionic" ]; then
@@ -82,7 +82,7 @@ termux_step_setup_variables() {
 			fi
 		fi
 	else
-		TERMUX_BUILT_PACKAGES_DIRECTORY="/data/data/.built-packages"
+		export TERMUX_BUILT_PACKAGES_DIRECTORY="${TERMUX_BUILT_PACKAGES_DIRECTORY:-/data/data/.built-packages}"
 	fi
 
 	# TERMUX_PKG_MAINTAINER should be explicitly set in build.sh of the package.

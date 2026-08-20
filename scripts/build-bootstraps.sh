@@ -48,12 +48,14 @@ TERMUX_DEFAULT_ARCHITECTURES=("aarch64" "arm" "i686" "x86_64")
 TERMUX_ARCHITECTURES=("${TERMUX_DEFAULT_ARCHITECTURES[@]}")
 
 TERMUX_PACKAGES_DIRECTORY="${TERMUX_PACKAGES_DIRECTORY:-/home/builder/termux-packages}"
-TERMUX_BUILT_DEBS_DIRECTORY="$TERMUX_PACKAGES_DIRECTORY/output"
+TERMUX_BUILT_DEBS_DIRECTORY="${TERMUX_BUILT_DEBS_DIRECTORY:-$TERMUX_PACKAGES_DIRECTORY/output}"
 if [[ "$TERMUX_ON_DEVICE_BUILD" == "true" ]]; then
-	TERMUX_BUILT_PACKAGES_DIRECTORY="$TERMUX_TOPDIR/.built-packages"
+	TERMUX_BUILT_PACKAGES_DIRECTORY="${TERMUX_BUILT_PACKAGES_DIRECTORY:-$TERMUX_TOPDIR/.built-packages}"
 else
-	TERMUX_BUILT_PACKAGES_DIRECTORY="/data/data/.built-packages"
+	TERMUX_BUILT_PACKAGES_DIRECTORY="${TERMUX_BUILT_PACKAGES_DIRECTORY:-/data/data/.built-packages}"
 fi
+export TERMUX_BUILT_DEBS_DIRECTORY TERMUX_BUILT_PACKAGES_DIRECTORY
+export TERMUX_PROPAGATE_OUTPUT_DIR_TO_DEPENDENCIES=true
 
 IGNORE_BUILD_SCRIPT_NOT_FOUND_ERROR=1
 FORCE_BUILD_PACKAGES=0
@@ -99,7 +101,7 @@ build_package() {
 	if [[ "${TERMUX_ON_DEVICE_BUILD:-false}" != "true" ]]; then
 		architecture_options+=("-a" "$TERMUX_ARCH")
 	fi
-	build_output="$("$TERMUX_PACKAGES_DIRECTORY"/build-package.sh "${BUILD_PACKAGE_OPTIONS[@]}" "${architecture_options[@]}" "$package_name" 2>&1 | tee >(cat - >&99); exit ${PIPESTATUS[0]})";
+	build_output="$("$TERMUX_PACKAGES_DIRECTORY"/build-package.sh "${BUILD_PACKAGE_OPTIONS[@]}" "${architecture_options[@]}" -o "$TERMUX_BUILT_DEBS_DIRECTORY" "$package_name" 2>&1 | tee >(cat - >&99); exit ${PIPESTATUS[0]})";
 	return_value=$?
 	echo "[*] Building '$package_name' exited with exit code $return_value"
 	exec 99>&-
@@ -117,6 +119,13 @@ build_package() {
 
 	return $return_value
 
+}
+
+termux_prepare_force_build_directories() {
+	mkdir -p "$TERMUX_TOPDIR"
+	TERMUX_BUILT_PACKAGES_DIRECTORY=$(mktemp -d "$TERMUX_TOPDIR/.bootstrap-built-packages.XXXXXXXX")
+	TERMUX_BUILT_DEBS_DIRECTORY=$(mktemp -d "$TERMUX_TOPDIR/bootstrap-debs.XXXXXXXX")
+	export TERMUX_BUILT_PACKAGES_DIRECTORY TERMUX_BUILT_DEBS_DIRECTORY
 }
 
 # Extract *.deb files to the bootstrap root.
@@ -397,7 +406,7 @@ main() {
 				fi
 				;;
 			-f)
-				BUILD_PACKAGE_OPTIONS+=("-f")
+				BUILD_PACKAGE_OPTIONS+=("-F")
 				FORCE_BUILD_PACKAGES=1
 				;;
 			*)
@@ -423,8 +432,7 @@ main() {
 		termux_step_handle_buildarch
 
 		if [[ $FORCE_BUILD_PACKAGES == "1" ]]; then
-			rm -f "$TERMUX_BUILT_PACKAGES_DIRECTORY_FOR_ARCH"/*
-			rm -f "$TERMUX_BUILT_DEBS_DIRECTORY"/*
+			termux_prepare_force_build_directories
 		fi
 
 		BOOTSTRAP_ROOTFS="$BOOTSTRAP_TMPDIR/rootfs-${TERMUX_ARCH}"
