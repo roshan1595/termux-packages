@@ -43,3 +43,7 @@ scripts/apt-packages-list-*.txt
 
 # Generated on GitHub Actions CI when building kernel modules
 /scripts/*.ko.zst
+
+# Python test caches
+__pycache__/
+*.py[cod]
