@@ -12,7 +12,25 @@ version=0.1.0
 
 set -e
 
-export TERMUX_SCRIPTDIR=$(realpath "$(dirname "$(realpath "$0")")/../")
+# Direct execution must never trust an inherited mode override. Source-based
+# tests may still set the value explicitly to exercise both argument paths.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	unset TERMUX_ON_DEVICE_BUILD
+fi
+
+if [[ -z "${TERMUX_ON_DEVICE_BUILD:-}" ]]; then
+	if [[ "$(uname -o)" == "Android" || -e "/system/bin/app_process" ]]; then
+		if [[ "$(id -u)" == "0" ]]; then
+			echo "On-device execution of this script as root is disabled." >&2
+			exit 1
+		fi
+		export TERMUX_ON_DEVICE_BUILD=true
+	else
+		export TERMUX_ON_DEVICE_BUILD=false
+	fi
+fi
+
+export TERMUX_SCRIPTDIR=$(realpath "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../")
 : "${TERMUX_TOPDIR:="$HOME/.termux-build"}"
 . "${TERMUX_SCRIPTDIR}"/scripts/properties.sh
 . "${TERMUX_SCRIPTDIR}"/scripts/build/termux_step_handle_buildarch.sh
@@ -29,9 +47,13 @@ BOOTSTRAP_ANDROID10_COMPATIBLE=false
 TERMUX_DEFAULT_ARCHITECTURES=("aarch64" "arm" "i686" "x86_64")
 TERMUX_ARCHITECTURES=("${TERMUX_DEFAULT_ARCHITECTURES[@]}")
 
-TERMUX_PACKAGES_DIRECTORY="/home/builder/termux-packages"
+TERMUX_PACKAGES_DIRECTORY="${TERMUX_PACKAGES_DIRECTORY:-/home/builder/termux-packages}"
 TERMUX_BUILT_DEBS_DIRECTORY="$TERMUX_PACKAGES_DIRECTORY/output"
-TERMUX_BUILT_PACKAGES_DIRECTORY="/data/data/.built-packages"
+if [[ "$TERMUX_ON_DEVICE_BUILD" == "true" ]]; then
+	TERMUX_BUILT_PACKAGES_DIRECTORY="$TERMUX_TOPDIR/.built-packages"
+else
+	TERMUX_BUILT_PACKAGES_DIRECTORY="/data/data/.built-packages"
+fi
 
 IGNORE_BUILD_SCRIPT_NOT_FOUND_ERROR=1
 FORCE_BUILD_PACKAGES=0
@@ -73,7 +95,11 @@ build_package() {
 	cd "$TERMUX_PACKAGES_DIRECTORY"
 	echo $'\n\n\n'"[*] Building '$package_name'..."
 	exec 99>&1
-	build_output="$("$TERMUX_PACKAGES_DIRECTORY"/build-package.sh "${BUILD_PACKAGE_OPTIONS[@]}" -a "$TERMUX_ARCH" "$package_name" 2>&1 | tee >(cat - >&99); exit ${PIPESTATUS[0]})";
+	local -a architecture_options=()
+	if [[ "${TERMUX_ON_DEVICE_BUILD:-false}" != "true" ]]; then
+		architecture_options+=("-a" "$TERMUX_ARCH")
+	fi
+	build_output="$("$TERMUX_PACKAGES_DIRECTORY"/build-package.sh "${BUILD_PACKAGE_OPTIONS[@]}" "${architecture_options[@]}" "$package_name" 2>&1 | tee >(cat - >&99); exit ${PIPESTATUS[0]})";
 	return_value=$?
 	echo "[*] Building '$package_name' exited with exit code $return_value"
 	exec 99>&-
@@ -307,8 +333,8 @@ Available command_options:
                      passed as comma-separated list.
 
 
-The package name/prefix that the bootstrap is built for is defined by
-TERMUX_APP_PACKAGE in 'scrips/properties.sh'. It defaults to 'com.termux'.
+The package name/prefix that the bootstrap is built for can be set with
+TERMUX_APP__PACKAGE_NAME. It defaults to 'com.termux' in 'scripts/properties.sh'.
 If package name is changed, make sure to run
 `./scripts/run-docker.sh ./clean.sh` or pass '-f' to force rebuild of packages.
 
@@ -492,4 +518,6 @@ main() {
 
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

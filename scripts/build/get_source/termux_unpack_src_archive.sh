@@ -8,7 +8,7 @@ termux_extract_src_archive() {
 		local folder
 		set +o pipefail
 		if [ "${file##*.}" = zip ]; then
-			folder=$(unzip -qql "$file" | head -n1 | tr -s ' ' | cut -d' ' -f5-)
+			folder=$(unzip -qql "$file" | sed -n '1p' | tr -s ' ' | cut -d' ' -f5-)
 			rm -Rf "$folder"
 			unzip -q "$file"
 			mv "$folder" "$TERMUX_PKG_SRCDIR"

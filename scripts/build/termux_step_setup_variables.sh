@@ -1,3 +1,22 @@
+termux_is_proot_build_environment() {
+	local tracer_pid=0 tracer_exe=""
+	while read -r key value _; do
+		if [[ "$key" == "TracerPid:" ]]; then
+			tracer_pid="$value"
+			break
+		fi
+	done < /proc/self/status
+
+	if [[ "$tracer_pid" =~ ^[1-9][0-9]*$ ]]; then
+		tracer_exe=$(readlink "/proc/$tracer_pid/exe" 2>/dev/null || true)
+	fi
+
+	[[ "${tracer_exe##*/}" == "proot" &&
+		"${PROOT_L2S_DIR:-}" == */.l2s &&
+		-d "$PROOT_L2S_DIR" &&
+		-r /etc/os-release ]]
+}
+
 termux_step_setup_variables() {
 	: "${TERMUX_ARCH:="aarch64"}" # arm, aarch64, i686 or x86_64.
 	: "${TERMUX_OUTPUT_DIR:="${TERMUX_SCRIPTDIR}/output"}"
@@ -53,8 +72,12 @@ termux_step_setup_variables() {
 		TERMUX_PKGS__BUILD__RM_ALL_PKGS_BUILT_MARKER_AND_INSTALL_FILES="false"
 
 		if [ "$TERMUX_PACKAGE_LIBRARY" = "bionic" ]; then
-			# On-device builds without termux-exec are unsupported.
-			if [[ ":${LD_PRELOAD:-}:" != ":${TERMUX__PREFIX__LIB_DIR}/libtermux-exec"*".so:" ]]; then
+			# Native Termux builds require termux-exec. A glibc PRoot session
+			# cannot preload the Android/Bionic library; PRoot already provides
+			# the path translation needed while producing target-prefix files.
+			local is_proot_build=false
+			termux_is_proot_build_environment && is_proot_build=true
+			if [[ "$is_proot_build" != "true" && ":${LD_PRELOAD:-}:" != ":${TERMUX__PREFIX__LIB_DIR}/libtermux-exec"*".so:" ]]; then
 				termux_error_exit "On-device builds without termux-exec are not supported."
 			fi
 		fi
